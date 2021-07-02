@@ -26,19 +26,14 @@ import aa.config as cf
 from utils.set import *
 from utils.randaugment4fixmatch import RandAugmentMC
 
-def compute_gradient_penalty(D, X):
-    """Calculates the gradient penalty loss for DRAGAN"""
-    Tensor = torch.cuda.FloatTensor
-    # Random weight term for interpolation
-    alpha = Tensor(np.random.random(size=X.shape))
-
-    interpolates = alpha * X + ((1 - alpha) * (X + 0.5 * X.std() * torch.rand(X.size()).cuda()))
-    interpolates = Variable(interpolates, requires_grad=True)
-
-    d_interpolates = D(interpolates).squeeze(3).squeeze(2)
-
-    fake = Variable(Tensor(X.shape[0], 1).fill_(1.0), requires_grad=False)
-
+def compute_gradient_penalty(D, real_samples, fake_samples):
+    """Calculates the gradient penalty loss for WGAN GP"""
+    # Random weight term for interpolation between real and fake samples
+    alpha = Tensor(np.random.random((real_samples.size(0), 1, 1, 1)))
+    # Get random interpolation between real and fake samples
+    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+    d_interpolates = D(interpolates)
+    fake = Variable(Tensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
     # Get gradient w.r.t. interpolates
     gradients = autograd.grad(
         outputs=d_interpolates,
@@ -48,8 +43,8 @@ def compute_gradient_penalty(D, X):
         retain_graph=True,
         only_inputs=True,
     )[0]
-
-    gradient_penalty = 10 * ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    gradients = gradients.view(gradients.size(0), -1)
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
 
 def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=None):
@@ -140,7 +135,6 @@ def run_batch(x, y, vae, dis, gan, optimizer, optimizer_d, optimizer_g, args):
     x, y = x.cuda(), y.cuda().view(-1, )
     x, y = Variable(x), Variable(y)
     out, z, gx = vae(x)
-    criterion = nn.BCELoss().cuda()
 
     optimizer.zero_grad()
     l_rec = F.mse_loss(torch.zeros(x.size()).cuda(), x-gx)
@@ -153,24 +147,19 @@ def run_batch(x, y, vae, dis, gan, optimizer, optimizer_d, optimizer_g, args):
     noise = torch.randn(x.size(0), args.dim).cuda()
     random_gx = gan(noise)
     random_x = (x - gx).detach() + random_gx
-    label = torch.full((y.size(0),), 1.0).cuda()
-    output = dis(x).view(-1)
-    D_x = output.mean().item()
-    l_d_real = criterion(output, label)
-    label = torch.full((y.size(0),), 0.0).cuda()
-    output = dis(random_x.detach()).view(-1)
-    D_gx = output.mean().item()
-    l_d_fake = criterion(output, label)
-    #l_penalty = compute_gradient_penalty(dis, x.data)
-    l_d = (l_d_fake + l_d_real)/2 #+ l_penalty
+    real_validity = dis(x)
+    D_x = real_validity.mean().item()
+    fake_validity = dis(random_x.detach())
+    D_gx = fake_validity.mean().item()
+    l_penalty = compute_gradient_penalty(dis, x.data, random_x.detach().data)
+    l_d = -torch.mean(real_validity) + torch.mean(fake_validity) + 10 * l_penalty
     l_d.backward()
     optimizer_d.step()
 
     optimizer_g.zero_grad()
-    label = torch.full((y.size(0),), 1.0).cuda()
-    output = dis(random_x).view(-1)
-    D_gx_z = output.mean().item()
-    l_real = criterion(output, label)
+    fake_validity = dis(random_x)
+    D_gx_z = fake_validity.mean().item()
+    l_real = -torch.mean(fake_validity)
     l_real.backward()
     optimizer_g.step()
 
@@ -216,7 +205,7 @@ def main(args):
     print('\n[Phase 2] : Model setup')
     vae = CVAE_cifar_2decoder(d=feature_dim, z=CNN_embed_dim)
     gan = GAN(d=feature_dim, z=CNN_embed_dim)
-    dis = Discriminator(3, 64)
+    dis = Discriminator_wgan()
 
     if use_cuda:
         vae.cuda()

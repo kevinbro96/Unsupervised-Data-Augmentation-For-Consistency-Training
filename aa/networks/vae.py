@@ -58,6 +58,29 @@ class Discriminator(nn.Module):
     def forward(self, input):
         return self.main(input)
 
+class Discriminator_wgan(nn.Module):
+    def __init__(self):
+        super(Discriminator_wgan, self).__init__()
+        DIM = 128
+        main = nn.Sequential(
+            nn.Conv2d(3, DIM, 3, 2, padding=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(DIM, 2 * DIM, 3, 2, padding=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(2 * DIM, 4 * DIM, 3, 2, padding=1),
+            nn.LeakyReLU(),
+        )
+
+        self.main = main
+        self.linear = nn.Linear(4*4*4*DIM, 1)
+
+    def forward(self, input):
+        DIM = 128
+        output = self.main(input)
+        output = output.view(-1, 4*4*4*DIM)
+        output = self.linear(output)
+        return output
+
 class wide_basic(nn.Module):
     def __init__(self, in_planes, planes, dropout_rate, stride=1):
         super(wide_basic, self).__init__()
