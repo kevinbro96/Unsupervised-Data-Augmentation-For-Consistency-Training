@@ -28,6 +28,7 @@ from utils.randaugment4fixmatch import RandAugmentMC
 
 def compute_gradient_penalty(D, real_samples, fake_samples):
     """Calculates the gradient penalty loss for WGAN GP"""
+    Tensor = torch.cuda.FloatTensor
     # Random weight term for interpolation between real and fake samples
     alpha = Tensor(np.random.random((real_samples.size(0), 1, 1, 1)))
     # Get random interpolation between real and fake samples
@@ -165,7 +166,6 @@ def run_batch(x, y, vae, dis, gan, optimizer, optimizer_d, optimizer_g, args):
 
     prec, _, _, _ = accuracy(out.data, y.data, topk=(1, 5))
     return l_d, loss,  l_rec, l_ce,  l_real, prec, D_x, D_gx, D_gx_z
-
 
 def main(args):
     learning_rate = 1.e-3

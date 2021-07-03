@@ -555,4 +555,10 @@ class CVAE_cifar_lowdim(AbstractAutoEncoder):
         gx = self.decode(z_projected)
         gx = self.gx_bn(gx)
         out = self.classifier(x-gx)
-        return out, z, gx, mu, logvar
+
+        random_z = z + torch.randn(z.size()).cuda()
+        random_z_projected = self.fc21(random_z)
+        random_gx = self.decode(random_z_projected)
+        random_gx = self.gx_bn(random_gx)
+        randomx = (x - gx).detach() + random_gx
+        return out, z, gx, randomx, mu, logvar
