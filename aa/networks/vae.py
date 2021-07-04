@@ -625,11 +625,16 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
         z_projected = self.fc21(z)
         gx = self.decode(z_projected)
         gx = self.gx_bn(gx)
-        out = self.classifier(x-gx)
 
         random_z = z + torch.randn(z.size()).cuda()
         random_z_projected = self.fc21(random_z)
         random_gx = self.decode(random_z_projected)
         random_gx = self.gx_bn(random_gx)
         randomx = x - gx + random_gx
-        return out, z, gx, randomx, mu, logvar
+
+        out = self.classifier(torch.cat((x-gx, x, randomx), dim=0))
+        out_rx = out[0:x.size(0)]
+        out_x = out[x.size(0):x.size(0)*2]
+        out_randx = out[x.size(0)*2:]
+
+        return out_rx, out_x, out_randx, z, gx, randomx, mu, logvar

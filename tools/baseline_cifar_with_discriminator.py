@@ -58,7 +58,7 @@ def reconst_images(batch_size=64, batch_num=1, dataloader=None, model=None):
                 break
             else:
                 X, y = X.cuda(), y.cuda().view(-1, )
-                out, z, gx, randomx, mu, logvar = model(X)
+                out_rx, out_x, out_randx, z, gx, randomx, mu, logvar = model(X)
 
                 grid_X = torchvision.utils.make_grid(X[:batch_size].data, nrow=8, padding=2, normalize=True)
                 wandb.log({"_Batch_{batch}_X.jpg".format(batch=batch_idx): [
@@ -95,7 +95,7 @@ def test(epoch, model, testloader):
             x, y = x.cuda(), y.cuda().view(-1, )
             bs = x.size(0)
             norm = torch.norm(torch.abs(x.view(100, -1)), p=2, dim=1)
-            out, z, gx, randomx, mu, logvar = model(x)
+            out_rx, out_x, out_randx, z, gx, randomx, mu, logvar = model(x)
             acc_gx = 1 - F.mse_loss(torch.div(gx, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     torch.div(x, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     reduction='sum') / 100
@@ -112,7 +112,7 @@ def test(epoch, model, testloader):
             # measure accuracy and record loss
             acc_randx_avg.update(acc_randx.data.item(), bs)
 
-            prec1, _, _, _ = accuracy(out.data, y.data, topk=(1, 5))
+            prec1, _, _, _ = accuracy(out_rx.data, y.data, topk=(1, 5))
             top1.update(prec1.item(), bs)
 
         wandb.log({'acc_gx_avg': acc_gx_avg.avg, \
@@ -132,7 +132,7 @@ def run_batch(x, y, model, dis, optimizer, optimizer_d):
     x, y = x.cuda(), y.cuda().view(-1, )
     x, y = Variable(x), Variable(y)
     bs = x.size(0)
-    out, z, gx, randomx,  mu, logvar = model(x)
+    out_rx, out_x, out_randx, z, gx, randomx,  mu, logvar = model(x)
 
     optimizer_d.zero_grad()
     real_validity = dis(x)
@@ -146,18 +146,18 @@ def run_batch(x, y, model, dis, optimizer, optimizer_d):
 
     optimizer.zero_grad()
     l_rec = F.mse_loss(torch.zeros(x.size()).cuda(), x-gx)
-    l_ce = F.cross_entropy(out, y)
+    l_ce = F.cross_entropy(out_rx, y) + F.cross_entropy(out_x, y)
     l_kl = - 0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     l_kl /= bs * 3 * args.dim
     fake_validity = dis(randomx)
     D_gx_z = fake_validity.mean().item()
     l_real = -torch.mean(fake_validity)
-    l_diverse = - F.mse_loss(x, randomx)
+    l_diverse = - F.mse_loss(out_x, out_randx)
     loss = args.re * l_rec + args.ce * l_ce + args.kl * l_kl + args.real * l_real + args.diverse * l_diverse
     loss.backward()
     optimizer.step()
 
-    prec, _, _, _ = accuracy(out.data, y.data, topk=(1, 5))
+    prec, _, _, _ = accuracy(out_rx.data, y.data, topk=(1, 5))
     return l_d, loss, l_rec, l_ce,  l_real, l_diverse, prec, D_x, D_gx, D_gx_z
 
 def main(args):
