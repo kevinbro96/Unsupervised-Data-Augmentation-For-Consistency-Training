@@ -402,7 +402,10 @@ class CVAE_cifar_2decoder(AbstractAutoEncoder):
         super(CVAE_cifar_2decoder, self).__init__()
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(3, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.Conv2d(3, d // 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 4),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(d // 4, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(d // 2),
             nn.ReLU(inplace=True),
             nn.Conv2d(d // 2, d, kernel_size=4, stride=2, padding=1, bias=False),
@@ -412,20 +415,22 @@ class CVAE_cifar_2decoder(AbstractAutoEncoder):
             nn.BatchNorm2d(d),
             ResBlock(d, d, bn=True),
         )
-
         self.decoder = nn.Sequential(
             ResBlock(d, d, bn=True),
             nn.BatchNorm2d(d),
             ResBlock(d, d, bn=True),
             nn.BatchNorm2d(d),
-
             nn.ConvTranspose2d(d, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(d // 2),
             nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(d // 2, 3, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(d // 2, d // 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 4),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(d // 4, 3, kernel_size=4, stride=2, padding=1, bias=False),
         )
+
         self.gx_bn = nn.BatchNorm2d(3)
-        self.f = 8
+        self.f = 4
         self.d = d
         self.z = z
         self.fc11 = nn.Linear(d * self.f ** 2, self.z)
@@ -459,19 +464,21 @@ class CVAE_cifar_2decoder(AbstractAutoEncoder):
 class GAN(nn.Module):
     def __init__(self, d, z,):
         super(GAN, self).__init__()
-        self.f = 8
+        self.f = 4
         self.d = d
         self.z = z
-        self.gan = nn.Sequential(
+        self.gan =  nn.Sequential(
             ResBlock(d, d, bn=True),
             nn.BatchNorm2d(d),
             ResBlock(d, d, bn=True),
             nn.BatchNorm2d(d),
-
             nn.ConvTranspose2d(d, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(d // 2),
             nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(d // 2, 3, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(d // 2, d // 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 4),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(d // 4, 3, kernel_size=4, stride=2, padding=1, bias=False),
         )
         self.gx_bn = nn.BatchNorm2d(3)
         self.fc = nn.Linear(self.z, d * self.f ** 2)

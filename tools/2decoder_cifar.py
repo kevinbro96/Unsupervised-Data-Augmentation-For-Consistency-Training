@@ -48,7 +48,7 @@ def compute_gradient_penalty(D, real_samples, fake_samples):
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
 
-def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=None):
+def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=None, args=None):
     cifar10_dataloader = dataloader
     vae.eval()
     gan.eval()
@@ -60,7 +60,7 @@ def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=No
             else:
                 X, y = X.cuda(), y.cuda().view(-1, )
                 out, z, gx = vae(X)
-                noise = torch.randn(X.size(0), 2048).cuda()
+                noise = torch.randn(X.size(0), args.dim).cuda()
                 random_gx = gan(noise)
                 randomx = X - gx + random_gx
                 grid_X = torchvision.utils.make_grid(X[:batch_size].data, nrow=8, padding=2, normalize=True)
@@ -78,7 +78,7 @@ def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=No
                     wandb.Image(grid_X_Xi)]}, commit=False)
     print('reconstruction complete!')
 
-def test(epoch, vae, gan, testloader):
+def test(epoch, vae, gan, testloader, args):
     # set model as testing mode
     vae.eval()
     gan.eval()
@@ -95,7 +95,7 @@ def test(epoch, vae, gan, testloader):
             bs = x.size(0)
             norm = torch.norm(torch.abs(x.view(100, -1)), p=2, dim=1)
             out, z, gx = vae(x)
-            noise = torch.randn(x.size(0), 2048).cuda()
+            noise = torch.randn(x.size(0), args.dim).cuda()
             random_gx = gan(noise)
             random_x = x-gx+random_gx
             acc_gx = 1 - F.mse_loss(torch.div(gx, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
@@ -125,7 +125,7 @@ def test(epoch, vae, gan, testloader):
         print("\n| Validation Epoch #%d\t\tRec_gx: %.4f Rec_rx: %.4f Rec_randomx: %.4f" % (epoch, acc_gx_avg.avg, \
                                                                             acc_rx_avg.avg, acc_randomx_avg.avg))
         print("| RX: %.2f%% " % (top1.avg))
-        reconst_images(batch_size=64, batch_num=2, dataloader=testloader, vae=vae, gan=gan)
+        reconst_images(batch_size=64, batch_num=2, dataloader=testloader, vae=vae, gan=gan, args=args)
         torch.save(vae.state_dict(),
                    os.path.join(args.save_dir, 'vae_epoch{}.pth'.format(epoch + 1)))  # save motion_encoder
         torch.save(gan.state_dict(),
@@ -297,7 +297,7 @@ def main(args):
         scheduler_d.step()
         scheduler_g.step()
         if epoch % 10 == 1:
-            test(epoch, vae, gan, testloader)
+            test(epoch, vae, gan, testloader, args)
 
         epoch_time = time.time() - start_time
         elapsed_time += epoch_time

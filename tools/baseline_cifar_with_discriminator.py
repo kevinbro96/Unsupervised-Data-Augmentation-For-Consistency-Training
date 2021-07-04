@@ -132,6 +132,7 @@ def run_batch(x, y, model, dis, optimizer, optimizer_d):
     x, y = x.cuda(), y.cuda().view(-1, )
     x, y = Variable(x), Variable(y)
     bs = x.size(0)
+    m = nn.Softmax()
     out_rx, out_x, out_randx, z, gx, randomx,  mu, logvar = model(x)
 
     optimizer_d.zero_grad()
@@ -152,7 +153,7 @@ def run_batch(x, y, model, dis, optimizer, optimizer_d):
     fake_validity = dis(randomx)
     D_gx_z = fake_validity.mean().item()
     l_real = -torch.mean(fake_validity)
-    l_diverse = - F.mse_loss(out_x, out_randx)
+    l_diverse = - F.mse_loss(m(out_x), m(out_randx))
     loss = args.re * l_rec + args.ce * l_ce + args.kl * l_kl + args.real * l_real + args.diverse * l_diverse
     loss.backward()
     optimizer.step()
@@ -278,8 +279,7 @@ def main(args):
             if (batch_idx + 1) % 30 == 0:
                 sys.stdout.write('\r')
                 sys.stdout.write(
-                    '| Epoch [%3d/%3d] Iter[%3d/%3d]\t\tLoss_dis: %.4f Loss_rec: %.4f Loss_ce: %.4f Loss_real: %.4f \
-                     Loss_diverse: %.4f Acc_x@1: %.3f%%  D(x): %.4f D(G(z)): %.4f / %.4f '
+                    '| Epoch [%3d/%3d] Iter[%3d/%3d]\t\tLoss_dis: %.4f Loss_rec: %.4f Loss_ce: %.4f Loss_real: %.4f Loss_diverse: %.4f Acc_x@1: %.3f%%  D(x): %.4f D(G(z)): %.4f / %.4f '
                     % (epoch, args.epochs, batch_idx + 1,
                        len(trainloader), loss_dis.avg, loss_rec.avg, loss_ce.avg, loss_real.avg, \
                        loss_diverse.avg, top1.avg, D_x.avg, D_gx.avg, D_gx_z.avg))
