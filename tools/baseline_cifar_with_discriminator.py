@@ -58,7 +58,7 @@ def reconst_images(batch_size=64, batch_num=1, dataloader=None, model=None):
                 break
             else:
                 X, y = X.cuda(), y.cuda().view(-1, )
-                out_rx, out_x, out_randx, z, gx, randomx, mu, logvar = model(X)
+                z, gx, random_gx, randomx, mu, logvar = model(X)
 
                 grid_X = torchvision.utils.make_grid(X[:batch_size].data, nrow=8, padding=2, normalize=True)
                 wandb.log({"_Batch_{batch}_X.jpg".format(batch=batch_idx): [
@@ -72,7 +72,7 @@ def reconst_images(batch_size=64, batch_num=1, dataloader=None, model=None):
                 grid_RandX = torchvision.utils.make_grid(randomx[:batch_size].data, nrow=8, padding=2, normalize=True)
                 wandb.log({"_Batch_{batch}_RandX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_RandX)]}, commit=False)
-                grid_RandGX = torchvision.utils.make_grid((randomx-X+gx)[:batch_size].data, nrow=8, padding=2, normalize=True)
+                grid_RandGX = torchvision.utils.make_grid((random_gx)[:batch_size].data, nrow=8, padding=2, normalize=True)
                 wandb.log({"_Batch_{batch}_RandGX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_RandGX)]}, commit=False)
                 grid_delta = torchvision.utils.make_grid((randomx-X)[:batch_size].data, nrow=8, padding=2, normalize=True)
@@ -80,9 +80,10 @@ def reconst_images(batch_size=64, batch_num=1, dataloader=None, model=None):
                     wandb.Image(grid_delta)]}, commit=False)
     print('reconstruction complete!')
 
-def test(epoch, model, testloader):
+def test(epoch, model, classifier, testloader):
     # set model as testing mode
     model.eval()
+    classifier.eval()
     # all_l, all_s, all_y, all_z, all_mu, all_logvar = [], [], [], [], [], []
     acc_gx_avg = AverageMeter()
     acc_rx_avg = AverageMeter()
@@ -95,7 +96,8 @@ def test(epoch, model, testloader):
             x, y = x.cuda(), y.cuda().view(-1, )
             bs = x.size(0)
             norm = torch.norm(torch.abs(x.view(100, -1)), p=2, dim=1)
-            out_rx, out_x, out_randx, z, gx, randomx, mu, logvar = model(x)
+            z, gx, randomgx, randomx, mu, logvar = model(x)
+            out_rx = classifier(x-gx)
             acc_gx = 1 - F.mse_loss(torch.div(gx, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     torch.div(x, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     reduction='sum') / 100
@@ -128,32 +130,41 @@ def test(epoch, model, testloader):
                    os.path.join(args.save_dir, 'model_epoch{}.pth'.format(epoch + 1)))  # save motion_encoder
         print("Epoch {} model saved!".format(epoch + 1))
 
-def run_batch(x, y, model, dis, optimizer, optimizer_d):
+def run_batch(x, y, model, dis, classifier ,optimizer, optimizer_d, optimizer_c):
     x, y = x.cuda(), y.cuda().view(-1, )
     x, y = Variable(x), Variable(y)
     bs = x.size(0)
     m = nn.Softmax()
-    out_rx, out_x, out_randx, z, gx, randomx,  mu, logvar = model(x)
+    z, gx, random_gx,  randomx,  mu, logvar = model(x)
 
     optimizer_d.zero_grad()
     real_validity = dis(x)
     D_x = real_validity.mean().item()
-    fake_validity = dis(randomx.detach())
+    fake_validity = dis((random_gx).detach())
     D_gx = fake_validity.mean().item()
     l_penalty = compute_gradient_penalty(dis, x.data, randomx.detach().data)
     l_d = -torch.mean(real_validity) + torch.mean(fake_validity) + 10 * l_penalty
     l_d.backward()
     optimizer_d.step()
 
+    optimizer_c.zero_grad()
+    out_x, f_x = classifier(x)
+    out_rx, _ = classifier((x-gx).detach())
+    l_crossentropy = F.cross_entropy(out_rx, y) + F.cross_entropy(out_x, y)
+    l_crossentropy.backward()
+    optimizer_c.step()
+
     optimizer.zero_grad()
-    l_rec = F.mse_loss(torch.zeros(x.size()).cuda(), x-gx)
-    l_ce = F.cross_entropy(out_rx, y) + F.cross_entropy(out_x, y)
+    out_randx, f_randx = classifier(randomx)
+    out_rx, _ = classifier(x-gx)
+    l_rec = F.mse_loss(x, gx)
+    l_ce = F.cross_entropy(out_rx, y)
     l_kl = - 0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     l_kl /= bs * 3 * args.dim
-    fake_validity = dis(randomx)
+    fake_validity = dis(random_gx)
     D_gx_z = fake_validity.mean().item()
     l_real = -torch.mean(fake_validity)
-    l_diverse = - F.mse_loss(m(out_x), m(out_randx))
+    l_diverse = - F.mse_loss(f_x.detach(), f_randx)
     loss = args.re * l_rec + args.ce * l_ce + args.kl * l_kl + args.real * l_real + args.diverse * l_diverse
     loss.backward()
     optimizer.step()
@@ -202,12 +213,15 @@ def main(args):
     print('\n[Phase 2] : Model setup')
     model = CVAE_cifar_rand(d=feature_dim, z=CNN_embed_dim)
     dis = Discriminator_wgan()
+    classifier = Wide_ResNet(28, 10, 0.3, 10)
 
     if use_cuda:
         model.cuda()
         model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
         dis.cuda()
         dis = torch.nn.DataParallel(dis, device_ids=range(torch.cuda.device_count()))
+        classifier.cuda()
+        classifier = torch.nn.DataParallel(classifier, device_ids=range(torch.cuda.device_count()))
         cudnn.benchmark = True
 
     optimizer = AdamW([
@@ -218,15 +232,22 @@ def main(args):
         {'params': dis.parameters()}
     ], lr=learning_rate, betas=(0.9, 0.999), weight_decay=1.e-6)
 
+    optimizer_c = AdamW([
+        {'params': classifier.parameters()}
+    ], lr=learning_rate, betas=(0.9, 0.999), weight_decay=1.e-6)
+
     if args.optim == 'consine':
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50,
                                                         eta_min=learning_rate_min)
         scheduler_d = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_d, T_max=50,
                                                         eta_min=learning_rate_min)
+        scheduler_c = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_c, T_max=50,
+                                                        eta_min=learning_rate_min)
 
     else:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.step, gamma=0.1, last_epoch=-1)
         scheduler_d = torch.optim.lr_scheduler.MultiStepLR(optimizer_d, milestones=args.step, gamma=0.1, last_epoch=-1)
+        scheduler_c = torch.optim.lr_scheduler.MultiStepLR(optimizer_c, milestones=args.step, gamma=0.1, last_epoch=-1)
 
     print('\n[Phase 3] : Training model')
     print('| Training Epochs = ' + str(args.epochs))
@@ -238,6 +259,7 @@ def main(args):
         start_time = time.time()
         model.train()
         dis.train()
+        classifier.train()
 
         loss_dis = AverageMeter()
         loss_diverse = AverageMeter()
@@ -254,7 +276,7 @@ def main(args):
         for batch_idx, (x, y) in enumerate(trainloader):
             bs = x.size(0)
             l_d, loss, l_rec, l_ce,  l_real, l_diverse, prec, d_x, d_gx, d_gx_z = \
-                run_batch(x, y, model, dis, optimizer, optimizer_d)
+                run_batch(x, y, model, dis, classifier, optimizer, optimizer_d, optimizer_c)
 
             loss_dis.update(l_d.data.item(), bs)
             loss_diverse.update(l_diverse.data.item(), bs)
@@ -285,8 +307,9 @@ def main(args):
                        loss_diverse.avg, top1.avg, D_x.avg, D_gx.avg, D_gx_z.avg))
         scheduler.step()
         scheduler_d.step()
+        scheduler_c.step()
         if epoch % 10 == 1:
-            test(epoch, model, testloader)
+            test(epoch, model, classifier, testloader)
 
         epoch_time = time.time() - start_time
         elapsed_time += epoch_time

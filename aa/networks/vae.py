@@ -139,10 +139,10 @@ class Wide_ResNet(nn.Module):
         out = self.layer3(out)
         out = F.relu(self.bn1(out))
         out = F.avg_pool2d(out, 8)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
+        feature = out.view(out.size(0), -1)
+        out = self.linear(feature)
 
-        return out
+        return out, feature
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None, bn=False):
@@ -614,12 +614,9 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
         return h, self.fc11(h1), self.fc12(h1)
 
     def reparameterize(self, mu, logvar):
-        if self.training:
-            std = logvar.mul(0.5).exp_()
-            eps = std.new(std.size()).normal_()
-            return eps.mul(std).add_(mu)
-        else:
-            return mu
+        std = logvar.mul(0.5).exp_()
+        eps = std.new(std.size()).normal_()
+        return eps.mul(std).add_(mu)
 
     def decode(self, z):
         z = z.view(-1, self.d, self.f, self.f)
@@ -628,20 +625,14 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
 
     def forward(self, x):
         _, mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        z_projected = self.fc21(z)
-        gx = self.decode(z_projected)
+        mu_projected = self.fc21(mu)
+        gx = self.decode(mu_projected)
         gx = self.gx_bn(gx)
 
-        random_z = z + torch.randn(z.size()).cuda()
-        random_z_projected = self.fc21(random_z)
-        random_gx = self.decode(random_z_projected)
+        z = self.reparameterize(mu, logvar)
+        z_projected = self.fc21(z)
+        random_gx = self.decode(z_projected)
         random_gx = self.gx_bn(random_gx)
         randomx = x - gx + random_gx
 
-        out = self.classifier(torch.cat((x-gx, x, randomx), dim=0))
-        out_rx = out[0:x.size(0)]
-        out_x = out[x.size(0):x.size(0)*2]
-        out_randx = out[x.size(0)*2:]
-
-        return out_rx, out_x, out_randx, z, gx, randomx, mu, logvar
+        return z, gx, random_gx, randomx, mu, logvar

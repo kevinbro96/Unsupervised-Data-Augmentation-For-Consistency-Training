@@ -70,12 +70,16 @@ def reconst_images(batch_size=64, batch_num=2, dataloader=None, vae=None, gan=No
                 wandb.log({"_Batch_{batch}_RandX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_RandX)]}, commit=False)
                 grid_Xi = torchvision.utils.make_grid(gx[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_Xi.jpg".format(batch=batch_idx): [
+                wandb.log({"_Batch_{batch}_GX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_Xi)]}, commit=False)
                 grid_X_Xi = torchvision.utils.make_grid((X[:batch_size] - gx[:batch_size]).data, nrow=8, padding=2,
                                                         normalize=True)
-                wandb.log({"_Batch_{batch}_X-Xi.jpg".format(batch=batch_idx): [
+                wandb.log({"_Batch_{batch}_RX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_X_Xi)]}, commit=False)
+                grid_RandGX = torchvision.utils.make_grid(((randomx-X+gx)[:batch_size]).data, nrow=8, padding=2,
+                                                        normalize=True)
+                wandb.log({"_Batch_{batch}_RandGX.jpg".format(batch=batch_idx): [
+                    wandb.Image(grid_RandGX)]}, commit=False)
     print('reconstruction complete!')
 
 def test(epoch, vae, gan, testloader, args):
