@@ -97,7 +97,7 @@ def test(epoch, model, classifier, testloader):
             bs = x.size(0)
             norm = torch.norm(torch.abs(x.view(100, -1)), p=2, dim=1)
             z, gx, randomgx, randomx, mu, logvar = model(x)
-            out_rx = classifier(x-gx)
+            out_rx, _ = classifier(x-gx)
             acc_gx = 1 - F.mse_loss(torch.div(gx, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     torch.div(x, norm.unsqueeze(1).unsqueeze(2).unsqueeze(3)), \
                                     reduction='sum') / 100
