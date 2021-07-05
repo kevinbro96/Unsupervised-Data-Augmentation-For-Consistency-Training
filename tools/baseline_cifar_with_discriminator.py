@@ -142,7 +142,7 @@ def run_batch(x, y, model, dis, classifier ,optimizer, optimizer_d, optimizer_c)
     D_x = real_validity.mean().item()
     fake_validity = dis((random_gx).detach())
     D_gx = fake_validity.mean().item()
-    l_penalty = compute_gradient_penalty(dis, x.data, randomx.detach().data)
+    l_penalty = compute_gradient_penalty(dis, x.data, random_gx.detach().data)
     l_d = -torch.mean(real_validity) + torch.mean(fake_validity) + 10 * l_penalty
     l_d.backward()
     optimizer_d.step()
