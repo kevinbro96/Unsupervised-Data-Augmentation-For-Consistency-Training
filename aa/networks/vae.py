@@ -194,6 +194,35 @@ class AbstractAutoEncoder(nn.Module):
         """returns the latest losses in a dictionary. Useful for logging."""
         return
 
+class MixStyle(nn.Module):
+    """MixStyle.
+    Reference:
+      Zhou et al. Domain Generalization with MixStyle. ICLR 2021.
+    """
+
+    def __init__(self, eps=1e-6):
+        """
+        Args:
+          p (float): probability of using MixStyle.
+          alpha (float): parameter of the Beta distribution.
+          eps (float): scaling parameter to avoid numerical issues.
+          mix (str): how to mix.
+        """
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x):
+        B = x.size(0)
+        mu = x.mean(dim=[2, 3], keepdim=True)
+        var = x.var(dim=[2, 3], keepdim=True)
+        sig = (var + self.eps).sqrt()
+        mu, sig = mu.detach(), sig.detach()
+        x_normed = (x-mu) / sig
+        perm = torch.randperm(B)
+        mu2, sig2 = mu[perm], sig[perm]
+
+        return x_normed*sig2 + mu2
+
 class CVAE_cifar(AbstractAutoEncoder):
     def __init__(self, d, z,  **kwargs):
         super(CVAE_cifar, self).__init__()
@@ -336,66 +365,7 @@ class CVAE_cifar_baseline(AbstractAutoEncoder):
         out = self.classifier(x-gx)
         return out, z, gx
 
-class CVAE_cifar_baseline2(AbstractAutoEncoder):
-    def __init__(self, d, z,  **kwargs):
-        super(CVAE_cifar_baseline2, self).__init__()
 
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(d // 2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(d // 2, d, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(d),
-            nn.ReLU(inplace=True),
-            ResBlock(d, d, bn=True),
-            nn.BatchNorm2d(d),
-            ResBlock(d, d, bn=True),
-        )
-
-        self.decoder = nn.Sequential(
-            ResBlock(d, d, bn=True),
-            nn.BatchNorm2d(d),
-            ResBlock(d, d, bn=True),
-            nn.BatchNorm2d(d),
-
-            nn.ConvTranspose2d(d, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(d // 2),
-            nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(d // 2, 3, kernel_size=4, stride=2, padding=1, bias=False),
-        )
-
-        self.gx_bn = nn.BatchNorm2d(3)
-
-        self.f = 8
-        self.d = d
-        self.z = z
-        self.fc11 = nn.Linear(d * self.f ** 2, self.z)
-        self.fc12 = nn.Linear(d * self.f ** 2, self.z)
-        self.fc21 = nn.Linear(self.z, d * self.f ** 2)
-
-        self.classifier = Wide_ResNet(28, 10, 0.3, 10)
-
-    def encode(self, x):
-        h = self.encoder(x)
-        h1 = h.view(-1, self.d * self.f ** 2)
-        return h, self.fc11(h1), self.fc12(h1)
-
-    def reparameterize(self, mu, logvar):
-            return mu
-
-    def decode(self, z):
-        z = z.view(-1, self.d, self.f, self.f)
-        h3 = self.decoder(z)
-        return torch.tanh(h3)
-
-    def forward(self, x):
-        _, mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar) #+ noise* torch.randn(mu.size()).cuda()
-        z_projected = self.fc21(z)
-        rx = self.decode(z_projected)
-        rx = self.gx_bn(rx)
-        out = self.classifier(rx)
-        return out, z, rx
 
 class CVAE_cifar_2decoder(AbstractAutoEncoder):
     def __init__(self, d, z,  **kwargs):
@@ -458,7 +428,7 @@ class CVAE_cifar_2decoder(AbstractAutoEncoder):
         gx = self.decode(z_projected)
         gx = self.gx_bn(gx)
         out = self.classifier(x-gx)
-        
+
         return out, z, gx
 
 class GAN(nn.Module):
@@ -606,8 +576,6 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
         self.fc12 = nn.Linear(d * self.f ** 2, self.z)
         self.fc21 = nn.Linear(self.z, d * self.f ** 2)
 
-        self.classifier = Wide_ResNet(28, 10, 0.3, 10)
-
     def encode(self, x):
         h = self.encoder(x)
         h1 = h.view(-1, self.d * self.f ** 2)
@@ -636,3 +604,69 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
         randomx = x - gx + random_gx
 
         return z, gx, random_gx, randomx, mu, logvar
+
+class CVAE_cifar_AdaIN(AbstractAutoEncoder):
+    def __init__(self, d, z,  **kwargs):
+        super(CVAE_cifar_AdaIN, self).__init__()
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(3, d // 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 4),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(d // 4, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(d // 2, d, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d),
+            nn.ReLU(inplace=True),
+            ResBlock(d, d, bn=True),
+            nn.BatchNorm2d(d),
+            ResBlock(d, d, bn=True),
+        )
+
+        self.decoder = nn.Sequential(
+            ResBlock(d, d, bn=True),
+            nn.BatchNorm2d(d),
+            ResBlock(d, d, bn=True),
+            nn.BatchNorm2d(d),
+            nn.ConvTranspose2d(d, d // 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 2),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(d // 2, d // 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(d // 4),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(d // 4, 3, kernel_size=4, stride=2, padding=1, bias=False),
+        )
+
+        self.gx_bn = nn.BatchNorm2d(3)
+
+        self.f = 4
+        self.d = d
+        self.z = z
+        self.fc11 = nn.Linear(d * self.f ** 2, self.z)
+        self.fc21 = nn.Linear(self.z, d * self.f ** 2)
+
+        self.style_change = MixStyle()
+
+    def encode(self, x):
+        h = self.encoder(x)
+        h1 = h.view(-1, self.d * self.f ** 2)
+        return h, self.fc11(h1)
+
+    def decode(self, z):
+        z = z.view(-1, self.d, self.f, self.f)
+        h3 = self.decoder(z)
+        return torch.tanh(h3)
+
+    def forward(self, x):
+        _, mu = self.encode(x)
+        mu_projected = self.fc21(mu)
+        gx = self.decode(mu_projected)
+        gx = self.gx_bn(gx)
+
+        z_projected = self.style_change(mu_projected)
+        style_gx = self.decode(z_projected)
+        style_gx = self.gx_bn(style_gx)
+        stylex = x - gx + style_gx
+
+        return z, gx, stylex
