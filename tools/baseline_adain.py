@@ -61,22 +61,22 @@ def reconst_images(batch_size=64, batch_num=1, dataloader=None, model=None):
                 z, gx, stylex = model(X)
 
                 grid_X = torchvision.utils.make_grid(X[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_X.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/X.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_X)]}, commit=False)
                 grid_Xi = torchvision.utils.make_grid(gx[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_GX.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/GX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_Xi)]}, commit=False)
                 grid_X_Xi = torchvision.utils.make_grid((X[:batch_size] - gx[:batch_size]).data, nrow=8, padding=2,normalize=True)
-                wandb.log({"_Batch_{batch}_RX.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/RX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_X_Xi)]}, commit=False)
                 grid_StyleX = torchvision.utils.make_grid(stylex[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_StyleX.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/StyleX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_StyleX)]}, commit=False)
                 grid_StyleGX = torchvision.utils.make_grid((stylex-X+gx)[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_StyleGX.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/StyleGX.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_StyleGX)]}, commit=False)
                 grid_delta = torchvision.utils.make_grid((stylex-X)[:batch_size].data, nrow=8, padding=2, normalize=True)
-                wandb.log({"_Batch_{batch}_delta.jpg".format(batch=batch_idx): [
+                wandb.log({"Batch_{batch}/delta.jpg".format(batch=batch_idx): [
                     wandb.Image(grid_delta)]}, commit=False)
     print('reconstruction complete!')
 

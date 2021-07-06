@@ -664,8 +664,9 @@ class CVAE_cifar_AdaIN(AbstractAutoEncoder):
         gx = self.decode(mu_projected)
         gx = self.gx_bn(gx)
 
-        z_projected = self.style_change(mu_projected)
-        style_gx = self.decode(z_projected)
+        mu_reshape = mu.view(-1, self.d, self.f, self.f)
+        mu_style = self.style_change(mu_reshape)
+        style_gx = torch.tanh(self.decoder(mu_style))
         style_gx = self.gx_bn(style_gx)
         stylex = x - gx + style_gx
 
