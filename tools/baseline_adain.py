@@ -87,7 +87,7 @@ def test(epoch, model, classifier, testloader):
     # all_l, all_s, all_y, all_z, all_mu, all_logvar = [], [], [], [], [], []
     acc_gx_avg = AverageMeter()
     acc_rx_avg = AverageMeter()
-    acc_randx_avg = AverageMeter()
+    acc_stylex_avg = AverageMeter()
     top1 = AverageMeter()
 
     with torch.no_grad():

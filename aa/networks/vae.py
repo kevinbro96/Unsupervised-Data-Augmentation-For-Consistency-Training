@@ -601,7 +601,7 @@ class CVAE_cifar_rand(AbstractAutoEncoder):
         z_projected = self.fc21(z)
         random_gx = self.decode(z_projected)
         random_gx = self.gx_bn(random_gx)
-        randomx = x - gx + random_gx
+        randomx = x - gx+ random_gx
 
         return z, gx, random_gx, randomx, mu, logvar
 
@@ -659,15 +659,13 @@ class CVAE_cifar_AdaIN(AbstractAutoEncoder):
         return torch.tanh(h3)
 
     def forward(self, x):
-        _, mu = self.encode(x)
-        mu_projected = self.fc21(mu)
-        gx = self.decode(mu_projected)
+        mu = self.encoder(x)
+        gx = torch.tanh(self.decoder(mu))
         gx = self.gx_bn(gx)
 
-        mu_reshape = mu.view(-1, self.d, self.f, self.f)
-        mu_style = self.style_change(mu_reshape)
+        mu_style = self.style_change(mu)
         style_gx = torch.tanh(self.decoder(mu_style))
         style_gx = self.gx_bn(style_gx)
         stylex = x - gx + style_gx
 
-        return z, gx, stylex
+        return mu, gx, stylex
